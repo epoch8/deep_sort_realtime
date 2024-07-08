@@ -1,4 +1,3 @@
-import time
 import logging
 from collections.abc import Iterable
 
@@ -12,17 +11,6 @@ from deep_sort_realtime.utils.nms import non_max_suppression
 
 logger = logging.getLogger(__name__)
 
-EMBEDDER_CHOICES = [
-    "mobilenet",
-    "torchreid",
-    "clip_RN50",
-    "clip_RN101",
-    "clip_RN50x4",
-    "clip_RN50x16",
-    "clip_ViT-B/32",
-    "clip_ViT-B/16",
-]
-
 
 class DeepSort(object):
     def __init__(
@@ -35,14 +23,9 @@ class DeepSort(object):
         nn_budget=None,
         gating_only_position=False,
         override_track_class=None,
-        embedder="mobilenet",
-        half=True,
-        bgr=True,
-        embedder_gpu=True,
-        embedder_model_name=None,
-        embedder_wts=None,
         polygon=False,
         today=None,
+        restore_removed_anchor_tracks=False
     ):
         """
 
@@ -95,49 +78,9 @@ class DeepSort(object):
             override_track_class=override_track_class,
             today=today,
             gating_only_position=gating_only_position,
+            restore_removed_anchor_tracks=restore_removed_anchor_tracks
         )
-
-        if embedder is not None:
-            if embedder not in EMBEDDER_CHOICES:
-                raise Exception(f"Embedder {embedder} is not a valid choice.")
-            if embedder == "mobilenet":
-                from deep_sort_realtime.embedder.embedder_pytorch import (
-                    MobileNetv2_Embedder as Embedder,
-                )
-
-                self.embedder = Embedder(
-                    half=half,
-                    max_batch_size=16,
-                    bgr=bgr,
-                    gpu=embedder_gpu,
-                    model_wts_path=embedder_wts,
-                )
-            elif embedder == 'torchreid':
-                from deep_sort_realtime.embedder.embedder_pytorch import TorchReID_Embedder as Embedder
-
-                self.embedder = Embedder(
-                    bgr=bgr, 
-                    gpu=embedder_gpu,
-                    model_name=embedder_model_name,
-                    model_wts_path=embedder_wts,
-                )
-
-            elif embedder.startswith('clip_'):
-                from deep_sort_realtime.embedder.embedder_clip import (
-                    Clip_Embedder as Embedder,
-                )
-
-                model_name = "_".join(embedder.split("_")[1:])
-                self.embedder = Embedder(
-                    model_name=model_name,
-                    model_wts_path=embedder_wts,
-                    max_batch_size=16,
-                    bgr=bgr,
-                    gpu=embedder_gpu,
-                )
-
-        else:
-            self.embedder = None
+        self.embedder = None
         self.polygon = polygon
         logger.info("DeepSort Tracker initialised")
         logger.info(f"- max age: {max_age}")
@@ -153,7 +96,9 @@ class DeepSort(object):
         logger.info(f'- in-build embedder : {"No" if self.embedder is None else "Yes"}')
         logger.info(f'- polygon detections : {"No" if polygon is False else "Yes"}')
 
-    def update_tracks(self, raw_detections, embeds=None, frame=None, today=None, others=None, instance_masks=None):
+    def update_tracks(
+            self, raw_detections, embeds=None, frame=None, today=None, others=None, instance_masks=None, anchor=False
+    ):
 
         """Run multi-target tracker on a particular sequence.
 
@@ -225,7 +170,7 @@ class DeepSort(object):
 
         # Update tracker.
         self.tracker.predict()
-        self.tracker.update(detections, today=today)
+        self.tracker.update(detections, today=today, anchor=anchor)
 
         return self.tracker.tracks
 

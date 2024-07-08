@@ -50,6 +50,7 @@ class Tracker:
         override_track_class=None,
         today=None,
         gating_only_position=False,
+        restore_removed_anchor_tracks=False
     ):
         self.today = today
         self.metric = metric
@@ -60,6 +61,9 @@ class Tracker:
 
         self.kf = kalman_filter.KalmanFilter()
         self.tracks = []
+        self.anchor_track_ids = set()
+        self.removed_anchor_tracks = []
+        self.restore_removed_anchor_tracks = restore_removed_anchor_tracks
         self.del_tracks_ids = []
         self._next_id = 1
         if override_track_class:
@@ -75,7 +79,7 @@ class Tracker:
         for track in self.tracks:
             track.predict(self.kf)
 
-    def update(self, detections, today=None):
+    def update(self, detections, today=None, anchor=False):
         """Perform measurement update and track management.
 
         Parameters
@@ -98,9 +102,18 @@ class Tracker:
 
         # Update track set.
         for track_idx, detection_idx in matches:
-            self.tracks[track_idx].update(self.kf, detections[detection_idx])
+            if track_idx < len(self.tracks):  # match is in current track
+                self.tracks[track_idx].update(self.kf, detections[detection_idx])
+            else:  # match is in removed anchor track
+                removed_track_idx = track_idx - len(self.tracks)
+                self.removed_anchor_tracks[removed_track_idx].update(self.kf, detections[detection_idx])
+                self.removed_anchor_tracks[removed_track_idx].mark_confirmed()
+                # print(f'Restore removed anchor {self.removed_anchor_tracks[removed_track_idx].track_id}')
         for track_idx in unmatched_tracks:
-            self.tracks[track_idx].mark_missed()
+            if track_idx < len(self.tracks):  # current track is unmatched - remove it
+                self.tracks[track_idx].mark_missed()
+            else:  # if removed track is unmatched - we don't need to remove it again
+                pass
         for detection_idx in unmatched_detections:
             self._initiate_track(detections[detection_idx])
         new_tracks = []
@@ -110,8 +123,18 @@ class Tracker:
                 new_tracks.append(t)
             else:
                 self.del_tracks_ids.append(t.track_id)
+                if t.track_id in self.anchor_track_ids:
+                    self.removed_anchor_tracks.append(t)
+        # add those removed anchor tracks which are confirmed to new tracks
+        new_tracks.extend(filter(lambda track: track.is_confirmed(), self.removed_anchor_tracks))
+        # remove confirmed tracks from removed_anchor_tracks
+        self.removed_anchor_tracks = list(filter(lambda track: not track.is_confirmed(), self.removed_anchor_tracks))
+
         self.tracks = new_tracks
-        # self.tracks = [t for t in self.tracks if not t.is_deleted()]
+        if self.restore_removed_anchor_tracks and anchor:
+            # if self.restore_removed_anchor_tracks is False - no anchor track ids will be saved ->
+            # -> no anchor tracks will be restored
+            self.anchor_track_ids.update(track.track_id for track in self.tracks)
 
         # Update distance metric.
         active_targets = [t.track_id for t in self.tracks if t.is_confirmed()]
@@ -121,7 +144,7 @@ class Tracker:
                 continue
             features += track.features
             targets += [track.track_id for _ in track.features]
-            track.features = []
+            track.features = [track.features[-1]]
         self.metric.partial_fit(
             np.asarray(features), np.asarray(targets), active_targets
         )
@@ -137,49 +160,49 @@ class Tracker:
 
             return cost_matrix
 
-        # Split track set into confirmed and unconfirmed tracks.
-        confirmed_tracks = [i for i, t in enumerate(self.tracks) if t.is_confirmed()]
-        unconfirmed_tracks = [
-            i for i, t in enumerate(self.tracks) if not t.is_confirmed()
-        ]
+        tracks_to_match = self.tracks + self.removed_anchor_tracks
 
-        # Associate confirmed tracks using appearance features.
+        # first we match all tracks and all detections by IoU
         (
-            matches_a,
-            unmatched_tracks_a,
-            unmatched_detections,
+            matches_iou,
+            unmatched_tracks_iou,  # those who didn't match by IoU
+            unmatched_detections_iou,  # those who didn't match by IoU
+        ) = linear_assignment.min_cost_matching(
+            iou_matching.iou_cost,
+            self.max_iou_distance,
+            # match by iou not only from current tracks but also from removed anchor tracks
+            tracks_to_match,
+            detections
+        )
+
+        # then we leave only those track matches that are recent
+        iou_emb_track_candidates = [
+            k for k, _ in matches_iou if tracks_to_match[k].time_since_update == 1
+        ]
+        unmatched_tracks_iou_time = [
+            k for k, _ in matches_iou if tracks_to_match[k].time_since_update != 1
+        ]
+        iou_emb_detection_candidates = [k for _, k in matches_iou]
+        # then we match by embeddings
+        (
+            matches_iou_emb,
+            unmatched_tracks_emb,
+            unmatched_detections_emb,
         ) = linear_assignment.matching_cascade(
             gated_metric,
             self.metric.matching_threshold,
             self.max_age,
-            self.tracks,
+            # match by embeddings not only from current tracks but also from removed anchor tracks
+            tracks_to_match,
             detections,
-            confirmed_tracks,
+            iou_emb_track_candidates,
+            iou_emb_detection_candidates
         )
 
-        # Associate remaining tracks together with unconfirmed tracks using IOU.
-        iou_track_candidates = unconfirmed_tracks + [
-            k for k in unmatched_tracks_a if self.tracks[k].time_since_update == 1
-        ]
-        unmatched_tracks_a = [
-            k for k in unmatched_tracks_a if self.tracks[k].time_since_update != 1
-        ]
-        (
-            matches_b,
-            unmatched_tracks_b,
-            unmatched_detections,
-        ) = linear_assignment.min_cost_matching(
-            iou_matching.iou_cost,
-            self.max_iou_distance,
-            self.tracks,
-            detections,
-            iou_track_candidates,
-            unmatched_detections,
-        )
-
-        matches = matches_a + matches_b
-        unmatched_tracks = list(set(unmatched_tracks_a + unmatched_tracks_b))
-        return matches, unmatched_tracks, unmatched_detections
+        # we need to wrap in lists because they might be empty
+        unmatched_tracks = list(set(list(unmatched_tracks_iou) + list(unmatched_tracks_iou_time) + list(unmatched_tracks_emb)))
+        unmatched_detections = list(set(list(unmatched_detections_iou) + list(unmatched_detections_emb)))
+        return matches_iou_emb, unmatched_tracks, unmatched_detections
 
     def _initiate_track(self, detection):
         mean, covariance = self.kf.initiate(detection.to_xyah())

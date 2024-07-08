@@ -92,13 +92,12 @@ class Track:
         self.age = 1
         self.time_since_update = 0
 
-        self.state = TrackState.Tentative
+        self.state = TrackState.Confirmed  # we don't want to wait, mark them confirmed
         self.features = []
         self.latest_feature = None
         if feature is not None:
             self.features.append(feature)
             self.latest_feature = feature
-
 
         self._n_init = n_init
         self._max_age = max_age
@@ -108,6 +107,16 @@ class Track:
         self.det_conf = det_conf
         self.instance_mask = instance_mask
         self.others = others
+
+        self.last_seen_ltrb = self.to_ltrb(orig=True, orig_strict=True)
+        self.ltrb_history = []
+        if self.last_seen_ltrb is not None:
+            self.ltrb_history.append(self.last_seen_ltrb)
+        self.status = 'new'
+        self.switch = None
+
+        self.classic_pred_history = []
+        self.track_pred_history = []
 
     def to_tlwh(self, orig=False, orig_strict=False):
         """Get current position in bounding box format `(top left x, top left y,
@@ -232,6 +241,8 @@ class Track:
         self.instance_mask = None
         self.others = None
 
+        self.status = 'missed'
+
     def update(self, kf, detection):
         """Perform Kalman filter measurement update step and update the feature
         cache.
@@ -251,7 +262,8 @@ class Track:
         self.features.append(detection.feature)
         self.latest_feature = detection.feature
         self.det_conf = detection.confidence
-        self.det_class = detection.class_name
+        if detection.class_name is not None:
+            self.det_class = detection.class_name
         self.instance_mask = detection.instance_mask
         self.others = detection.others
 
@@ -259,14 +271,22 @@ class Track:
 
         self.time_since_update = 0
         if self.state == TrackState.Tentative and self.hits >= self._n_init:
-            self.state = TrackState.Confirmed
+            self.mark_confirmed()
+
+        self.last_seen_ltrb = self.to_ltrb(orig=True, orig_strict=True)
+        self.ltrb_history.append(self.last_seen_ltrb)
+        self.status = 'ok'
+        self.track_pred_history.append(detection.class_name)
 
     def mark_missed(self):
         """Mark this track as missed (no association at the current time step)."""
-        if self.state == TrackState.Tentative:
-            self.state = TrackState.Deleted
-        elif self.time_since_update > self._max_age:
-            self.state = TrackState.Deleted
+        #         if self.state == TrackState.Tentative:
+        #             self.state = TrackState.Deleted
+        #         elif self.time_since_update > self._max_age:
+        self.state = TrackState.Deleted  # because we don't wand 'missed' tracks, remove them immediately
+
+    def mark_confirmed(self):
+        self.state = TrackState.Confirmed
 
     def is_tentative(self):
         """Returns True if this track is tentative (unconfirmed)."""
