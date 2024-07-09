@@ -123,10 +123,10 @@ class NearestNeighborDistanceMetric(object):
     """
 
     def __init__(self, metric, matching_threshold, budget=None):
-
-        if metric == "euclidean":
+        self.metric = metric
+        if self.metric == "euclidean":
             self._metric = _nn_euclidean_distance
-        elif metric == "cosine":
+        elif self.metric == "cosine":
             self._metric = _nn_cosine_distance
         else:
             raise ValueError("Invalid metric; must be either 'euclidean' or 'cosine'")
@@ -177,3 +177,31 @@ class NearestNeighborDistanceMetric(object):
         for i, target in enumerate(targets):
             cost_matrix[i, :] = self._metric(list(self.samples[target].values()), features)
         return cost_matrix
+
+    def to_json(self):
+        metric_samples_dict = {
+            track_id: {k: v.tolist() for k, v in track_id_dict.items()}
+            for track_id, track_id_dict in self.samples.items()
+        }
+        return {
+            'samples': metric_samples_dict,
+            'init_kwargs': {
+                'matching_threshold': self.matching_threshold,
+                'budget': self.budget,
+                'metric': self.metric
+            }
+        }
+
+    @staticmethod
+    def from_json(data):
+        samples_data = data['samples']
+        samples_dict = {
+            track_id: {
+                k: np.array(v) for k, v in track_id_dict.items()
+            }
+            for track_id, track_id_dict in samples_data.items()
+        }
+        samples = defaultdict(dict, samples_dict)
+        metric_obj = NearestNeighborDistanceMetric(**data['init_kwargs'])
+        metric_obj.samples = samples
+        return metric_obj

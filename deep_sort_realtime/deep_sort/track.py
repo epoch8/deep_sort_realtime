@@ -1,3 +1,5 @@
+import numpy as np
+
 # vim: expandtab:ts=4:sw=4
 class TrackState:
     """
@@ -114,9 +116,6 @@ class Track:
             self.ltrb_history.append(self.last_seen_ltrb)
         self.status = 'new'
         self.switch = None
-
-        self.classic_pred_history = []
-        self.track_pred_history = []
 
     def to_tlwh(self, orig=False, orig_strict=False):
         """Get current position in bounding box format `(top left x, top left y,
@@ -276,7 +275,6 @@ class Track:
         self.last_seen_ltrb = self.to_ltrb(orig=True, orig_strict=True)
         self.ltrb_history.append(self.last_seen_ltrb)
         self.status = 'ok'
-        self.track_pred_history.append(detection.class_name)
 
     def mark_missed(self):
         """Mark this track as missed (no association at the current time step)."""
@@ -299,3 +297,49 @@ class Track:
     def is_deleted(self):
         """Returns True if this track is dead and should be deleted."""
         return self.state == TrackState.Deleted
+
+    def to_json(self):
+        return {
+            'hits': self.hits,
+            'age': self.age,
+            'time_since_update': self.time_since_update,
+            'state': self.state,
+            'features': [feat.tolist() for feat in self.features],
+            'latest_feature': self.latest_feature.tolist(),
+            'last_seen_ltrb': self.last_seen_ltrb.tolist(),
+            'ltrb_history': [item.tolist() for item in self.ltrb_history],
+            'status': self.status,
+            'switch': self.switch,
+            'init_kwargs': {
+                'mean': self.mean.tolist(),
+                'covariance': self.covariance.tolist(),
+                'track_id': self.track_id,
+                'n_init': self._n_init,
+                'max_age': self._max_age,
+                'original_ltwh': self.original_ltwh.tolist() if self.original_ltwh is not None else None,
+                'det_class': self.det_class,
+                'det_conf': self.det_conf,
+                'instance_mask': self.instance_mask,
+                'others': self.others,
+            }
+        }
+
+    @staticmethod
+    def from_json(data):
+        data['init_kwargs']['mean'] = np.array(data['init_kwargs']['mean'])
+        data['init_kwargs']['covariance'] = np.array(data['init_kwargs']['covariance'])
+        oltwh = data['init_kwargs']['original_ltwh']
+        data['init_kwargs']['original_ltwh'] = np.array(oltwh) if oltwh is not None else oltwh
+        track_obj = Track(**data['init_kwargs'])
+
+        track_obj.hits = data['hits']
+        track_obj.age = data['age']
+        track_obj.time_since_update = data['time_since_update']
+        track_obj.state = data['state']
+        track_obj.features = [np.array(feat) for feat in data['features']]
+        track_obj.latest_feature = np.array(data['latest_feature'])
+        track_obj.last_seen_ltrb = np.array(data['last_seen_ltrb'])
+        track_obj.ltrb_history = [np.array(item) for item in data['ltrb_history']]
+        track_obj.status = data['status']
+        track_obj.switch = data['switch']
+        return track_obj

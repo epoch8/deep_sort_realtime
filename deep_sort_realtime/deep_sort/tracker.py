@@ -6,6 +6,7 @@ from . import kalman_filter
 from . import linear_assignment
 from . import iou_matching
 from .track import Track
+from .nn_matching import NearestNeighborDistanceMetric
 
 
 class Tracker:
@@ -58,12 +59,12 @@ class Tracker:
         self.max_age = max_age
         self.n_init = n_init
         self.gating_only_position = gating_only_position
+        self.restore_removed_anchor_tracks = restore_removed_anchor_tracks
 
         self.kf = kalman_filter.KalmanFilter()
         self.tracks = []
         self.anchor_track_ids = set()
         self.removed_anchor_tracks = []
-        self.restore_removed_anchor_tracks = restore_removed_anchor_tracks
         self.del_tracks_ids = []
         self._next_id = 1
         if override_track_class:
@@ -232,3 +233,36 @@ class Tracker:
     def delete_all_tracks(self):
         self.tracks = []
         self._next_id = 1
+
+    def to_json(self):
+        tracks_list = [track.to_json() for track in self.tracks]
+        removed_anchor_tracks_list = [track.to_json() for track in self.removed_anchor_tracks]
+        anchor_track_ids_list = list(self.anchor_track_ids)
+        metric_dict = self.metric.to_json()
+        return {
+            'tracks': tracks_list,
+            'removed_anchor_tracks': removed_anchor_tracks_list,
+            'anchor_track_ids': anchor_track_ids_list,
+            '_next_id': self._next_id,
+            'metric': metric_dict,
+            'init_kwargs': {
+                'max_iou_distance': self.max_iou_distance,
+                'max_age': self.max_age,
+                'n_init': self.n_init,
+                'gating_only_position': self.gating_only_position,
+                'restore_removed_anchor_tracks': self.restore_removed_anchor_tracks
+            }
+        }
+
+    @staticmethod
+    def from_json(data):
+        metric = NearestNeighborDistanceMetric.from_json(data['metric'])
+        tracks = [Track.from_json(track_data) for track_data in data['tracks']]
+        rem_anch_tracks = [Track.from_json(track_data) for track_data in data['removed_anchor_tracks']]
+        tracker = Tracker(metric, **data['init_kwargs'])
+
+        tracker.tracks = tracks
+        tracker.removed_anchor_tracks = rem_anch_tracks
+        tracker.anchor_track_ids = set(data['anchor_track_ids'])
+        tracker._next_id = data['_next_id']
+        return tracker
