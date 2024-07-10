@@ -6,4 +6,3 @@ Pillow
 torch
 torchvision
 typing-extensions
-redis==4.1.3

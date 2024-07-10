@@ -1,5 +1,7 @@
 # vim: expandtab:ts=4:sw=4
 from __future__ import absolute_import
+
+from copy import deepcopy
 from datetime import datetime
 import numpy as np
 from . import kalman_filter
@@ -98,16 +100,24 @@ class Tracker:
                 self.today = today
                 self._next_id = 1
 
+        # when we update existing tracks - we don't need classes
+        detections_maybe_without_classes = deepcopy(detections)
+        for det in detections_maybe_without_classes:
+            if not anchor:
+                det.class_name = None
+
         # Run matching cascade.
-        matches, unmatched_tracks, unmatched_detections = self._match(detections)
+        matches, unmatched_tracks, unmatched_detections = self._match(detections_maybe_without_classes)
 
         # Update track set.
         for track_idx, detection_idx in matches:
             if track_idx < len(self.tracks):  # match is in current track
-                self.tracks[track_idx].update(self.kf, detections[detection_idx])
+                self.tracks[track_idx].update(self.kf, detections_maybe_without_classes[detection_idx])
             else:  # match is in removed anchor track
                 removed_track_idx = track_idx - len(self.tracks)
-                self.removed_anchor_tracks[removed_track_idx].update(self.kf, detections[detection_idx])
+                self.removed_anchor_tracks[removed_track_idx].update(
+                    self.kf, detections_maybe_without_classes[detection_idx]
+                )
                 self.removed_anchor_tracks[removed_track_idx].mark_confirmed()
                 # print(f'Restore removed anchor {self.removed_anchor_tracks[removed_track_idx].track_id}')
         for track_idx in unmatched_tracks:
@@ -116,6 +126,7 @@ class Tracker:
             else:  # if removed track is unmatched - we don't need to remove it again
                 pass
         for detection_idx in unmatched_detections:
+            # for new tracks - give them classes from search space predictions
             self._initiate_track(detections[detection_idx])
         new_tracks = []
         self.del_tracks_ids = []
