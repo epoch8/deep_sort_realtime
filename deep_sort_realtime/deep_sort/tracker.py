@@ -138,7 +138,6 @@ class Tracker:
             self.anchor_track_ids.update(track.track_id for track in self.tracks)
 
         # Update distance metric.
-        active_targets = [t.track_id for t in self.tracks if t.is_confirmed()]
         features, targets = [], []
         for track in self.tracks:
             if not track.is_confirmed():
@@ -146,6 +145,7 @@ class Tracker:
             features += track.features
             targets += [track.track_id for _ in track.features]
             track.features = [track.features[-1]]
+        active_targets = [t.track_id for t in self.tracks + self.removed_anchor_tracks]
         self.metric.partial_fit(
             np.asarray(features), np.asarray(targets), active_targets
         )
@@ -234,11 +234,17 @@ class Tracker:
         self.tracks = []
         self._next_id = 1
 
-    def to_json(self):
-        tracks_list = [track.to_json() for track in self.tracks]
-        removed_anchor_tracks_list = [track.to_json() for track in self.removed_anchor_tracks]
+    def to_json(self, round_big_arrays_to=32):
+        tracks_list = [
+            track.to_json(round_big_arrays_to=round_big_arrays_to)
+            for track in self.tracks
+        ]
+        removed_anchor_tracks_list = [
+            track.to_json(round_big_arrays_to=round_big_arrays_to)
+            for track in self.removed_anchor_tracks
+        ]
         anchor_track_ids_list = list(self.anchor_track_ids)
-        metric_dict = self.metric.to_json()
+        metric_dict = self.metric.to_json(round_big_arrays_to=round_big_arrays_to)
         return {
             'tracks': tracks_list,
             'removed_anchor_tracks': removed_anchor_tracks_list,

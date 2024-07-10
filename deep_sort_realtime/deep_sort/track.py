@@ -298,14 +298,14 @@ class Track:
         """Returns True if this track is dead and should be deleted."""
         return self.state == TrackState.Deleted
 
-    def to_json(self):
+    def to_json(self, round_big_arrays_to=32):
         return {
             'hits': self.hits,
             'age': self.age,
             'time_since_update': self.time_since_update,
             'state': self.state,
-            'features': [feat.tolist() for feat in self.features],
-            'latest_feature': self.latest_feature.tolist(),
+            'features': [feat.astype('float64').round(round_big_arrays_to).tolist() for feat in self.features],
+            'latest_feature': self.latest_feature.astype('float64').round(round_big_arrays_to).tolist(),
             'last_seen_ltrb': self.last_seen_ltrb.tolist(),
             'ltrb_history': [item.tolist() for item in self.ltrb_history],
             'status': self.status,

@@ -152,8 +152,7 @@ class NearestNeighborDistanceMetric(object):
             if self.budget is not None:
                 keys_left = list(self.samples[target])[-self.budget:]
                 self.samples[target] = {key: self.samples[target][key] for key in keys_left}
-        # don't remove samples for removed tracks
-        # self.samples = defaultdict(dict, {k: self.samples[k] for k in active_targets})
+        self.samples = defaultdict(dict, {k: self.samples[k] for k in active_targets})
 
     def distance(self, features, targets):
         """Compute distance between features and targets.
@@ -178,9 +177,9 @@ class NearestNeighborDistanceMetric(object):
             cost_matrix[i, :] = self._metric(list(self.samples[target].values()), features)
         return cost_matrix
 
-    def to_json(self):
+    def to_json(self, round_big_arrays_to=32):
         metric_samples_dict = {
-            track_id: {k: v.tolist() for k, v in track_id_dict.items()}
+            track_id: {k: v.astype('float64').round(round_big_arrays_to).tolist() for k, v in track_id_dict.items()}
             for track_id, track_id_dict in self.samples.items()
         }
         return {

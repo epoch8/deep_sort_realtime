@@ -4,9 +4,10 @@ from deep_sort_realtime.deepsort_tracker import DeepSort
 
 
 class DeepSortController:
-    def __init__(self, deepsort_kwargs, redis_kwargs):
+    def __init__(self, deepsort_kwargs, redis_kwargs, round_big_arrays_to=32):
         self.r = redis.Redis(**redis_kwargs)
         self.deepsort_kwargs = deepsort_kwargs
+        self.round_big_arrays_to = round_big_arrays_to
 
     def update(
         self,
@@ -48,7 +49,7 @@ class DeepSortController:
         return DeepSort.from_json(tracker_data) if tracker_data else DeepSort(**self.deepsort_kwargs)
 
     def _save_tracker_data_to_redis(self, camera_id, tracker):
-        tracker_data = tracker.to_json()
+        tracker_data = tracker.to_json(round_big_arrays_to=self.round_big_arrays_to)
         self.r.json().set(camera_id, '.', tracker_data)
 
     def _is_new_annotation(self, annotation):

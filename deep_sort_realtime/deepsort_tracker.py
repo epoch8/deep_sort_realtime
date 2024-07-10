@@ -169,8 +169,8 @@ class DeepSort(object):
     def delete_all_tracks(self):
         self.tracker.delete_all_tracks()
 
-    def to_json(self):
-        return {'tracker': self.tracker.to_json()}
+    def to_json(self, round_big_arrays_to=32):
+        return {'tracker': self.tracker.to_json(round_big_arrays_to=round_big_arrays_to)}
 
     @staticmethod
     def from_json(data):
