@@ -132,7 +132,10 @@ class NearestNeighborDistanceMetric(object):
             raise ValueError("Invalid metric; must be either 'euclidean' or 'cosine'")
         self.matching_threshold = matching_threshold
         self.budget = budget
-        self.samples = defaultdict(dict)
+        self.samples = defaultdict(list)
+
+        # self.save_every_nth_feature = 2
+        # self.feature_counts = defaultdict(int)
 
     def partial_fit(self, features, targets, active_targets):
         """Update the distance metric with new data.
@@ -148,11 +151,12 @@ class NearestNeighborDistanceMetric(object):
 
         """
         for feature, target in zip(features, targets):
-            self.samples[target][hash(str(feature))] = feature
+            # if self.feature_counts[target] % self.save_every_nth_feature == 0:
+            self.samples[target].append(feature)
+            # self.feature_counts[target] += 1
             if self.budget is not None:
-                keys_left = list(self.samples[target])[-self.budget:]
-                self.samples[target] = {key: self.samples[target][key] for key in keys_left}
-        self.samples = defaultdict(dict, {k: self.samples[k] for k in active_targets})
+                self.samples[target] = self.samples[target][-self.budget:]
+        self.samples = defaultdict(list, {k: self.samples[k] for k in active_targets})
 
     def distance(self, features, targets):
         """Compute distance between features and targets.
@@ -174,13 +178,13 @@ class NearestNeighborDistanceMetric(object):
         """
         cost_matrix = np.zeros((len(targets), len(features)))
         for i, target in enumerate(targets):
-            cost_matrix[i, :] = self._metric(list(self.samples[target].values()), features)
+            cost_matrix[i, :] = self._metric(self.samples[target], features)
         return cost_matrix
 
     def to_json(self, round_big_arrays_to=32):
         metric_samples_dict = {
-            track_id: {k: v.astype('float64').round(round_big_arrays_to).tolist() for k, v in track_id_dict.items()}
-            for track_id, track_id_dict in self.samples.items()
+            track_id: [feat.astype('float64').round(round_big_arrays_to).tolist() for feat in track_id_features]
+            for track_id, track_id_features in self.samples.items()
         }
         return {
             'samples': metric_samples_dict,
@@ -195,12 +199,10 @@ class NearestNeighborDistanceMetric(object):
     def from_json(data):
         samples_data = data['samples']
         samples_dict = {
-            track_id: {
-                k: np.array(v) for k, v in track_id_dict.items()
-            }
-            for track_id, track_id_dict in samples_data.items()
+            track_id: [np.array(feat) for feat in track_id_features]
+            for track_id, track_id_features in samples_data.items()
         }
-        samples = defaultdict(dict, samples_dict)
+        samples = defaultdict(list, samples_dict)
         metric_obj = NearestNeighborDistanceMetric(**data['init_kwargs'])
         metric_obj.samples = samples
         return metric_obj
