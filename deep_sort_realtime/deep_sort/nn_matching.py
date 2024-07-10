@@ -134,8 +134,8 @@ class NearestNeighborDistanceMetric(object):
         self.budget = budget
         self.samples = defaultdict(list)
 
-        # self.save_every_nth_feature = 2
-        # self.feature_counts = defaultdict(int)
+        self.save_every_nth_feature = 1
+        self.feature_counts = defaultdict(int)
 
     def partial_fit(self, features, targets, active_targets):
         """Update the distance metric with new data.
@@ -151,9 +151,9 @@ class NearestNeighborDistanceMetric(object):
 
         """
         for feature, target in zip(features, targets):
-            # if self.feature_counts[target] % self.save_every_nth_feature == 0:
-            self.samples[target].append(feature)
-            # self.feature_counts[target] += 1
+            if self.feature_counts[target] % self.save_every_nth_feature == 0:
+                self.samples[target].append(feature)
+            self.feature_counts[target] += 1
             if self.budget is not None:
                 self.samples[target] = self.samples[target][-self.budget:]
         self.samples = defaultdict(list, {k: self.samples[k] for k in active_targets})
@@ -188,6 +188,7 @@ class NearestNeighborDistanceMetric(object):
         }
         return {
             'samples': metric_samples_dict,
+            'feature_counts': dict(self.feature_counts),
             'init_kwargs': {
                 'matching_threshold': self.matching_threshold,
                 'budget': self.budget,
@@ -203,6 +204,8 @@ class NearestNeighborDistanceMetric(object):
             for track_id, track_id_features in samples_data.items()
         }
         samples = defaultdict(list, samples_dict)
+        feature_counts = defaultdict(int, data['feature_counts'])
         metric_obj = NearestNeighborDistanceMetric(**data['init_kwargs'])
         metric_obj.samples = samples
+        metric_obj.feature_counts = feature_counts
         return metric_obj
