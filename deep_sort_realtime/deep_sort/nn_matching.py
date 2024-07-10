@@ -50,9 +50,11 @@ def _cosine_distance(a, b, data_is_normalized=False):
         contains the squared distance between `a[i]` and `b[j]`.
 
     """
+    a = np.asarray(a).astype('float64').round(6)
+    b = np.asarray(b).astype('float64').round(6)
     if not data_is_normalized:
-        a = np.asarray(a) / np.linalg.norm(a, axis=1, keepdims=True)
-        b = np.asarray(b) / np.linalg.norm(b, axis=1, keepdims=True)
+        a = a / np.linalg.norm(a, axis=1, keepdims=True)
+        b = b / np.linalg.norm(b, axis=1, keepdims=True)
     return 1.0 - np.dot(a, b.T)
 
 
@@ -123,16 +125,19 @@ class NearestNeighborDistanceMetric(object):
     """
 
     def __init__(self, metric, matching_threshold, budget=None):
-
-        if metric == "euclidean":
+        self.metric = metric
+        if self.metric == "euclidean":
             self._metric = _nn_euclidean_distance
-        elif metric == "cosine":
+        elif self.metric == "cosine":
             self._metric = _nn_cosine_distance
         else:
             raise ValueError("Invalid metric; must be either 'euclidean' or 'cosine'")
         self.matching_threshold = matching_threshold
         self.budget = budget
-        self.samples = defaultdict(dict)
+        self.samples = defaultdict(list)
+
+        self.save_every_nth_feature = 2
+        self.feature_counts = defaultdict(int)
 
     def partial_fit(self, features, targets, active_targets):
         """Update the distance metric with new data.
@@ -148,12 +153,12 @@ class NearestNeighborDistanceMetric(object):
 
         """
         for feature, target in zip(features, targets):
-            self.samples[target][hash(str(feature))] = feature
+            if self.feature_counts[target] % self.save_every_nth_feature == 0:
+                self.samples[target].append(feature)
+            self.feature_counts[target] += 1
             if self.budget is not None:
-                keys_left = list(self.samples[target])[-self.budget:]
-                self.samples[target] = {key: self.samples[target][key] for key in keys_left}
-        # don't remove samples for removed tracks
-        # self.samples = defaultdict(dict, {k: self.samples[k] for k in active_targets})
+                self.samples[target] = self.samples[target][-self.budget:]
+        self.samples = defaultdict(list, {k: self.samples[k] for k in active_targets})
 
     def distance(self, features, targets):
         """Compute distance between features and targets.
@@ -175,5 +180,5 @@ class NearestNeighborDistanceMetric(object):
         """
         cost_matrix = np.zeros((len(targets), len(features)))
         for i, target in enumerate(targets):
-            cost_matrix[i, :] = self._metric(list(self.samples[target].values()), features)
+            cost_matrix[i, :] = self._metric(self.samples[target], features)
         return cost_matrix

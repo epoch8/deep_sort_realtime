@@ -137,14 +137,14 @@ class Tracker:
             self.anchor_track_ids.update(track.track_id for track in self.tracks)
 
         # Update distance metric.
-        active_targets = [t.track_id for t in self.tracks if t.is_confirmed()]
         features, targets = [], []
         for track in self.tracks:
             if not track.is_confirmed():
                 continue
-            features += track.features
-            targets += [track.track_id for _ in track.features]
+            features.append(track.features[-1])
+            targets.append(track.track_id)
             track.features = [track.features[-1]]
+        active_targets = [t.track_id for t in self.tracks + self.removed_anchor_tracks]
         self.metric.partial_fit(
             np.asarray(features), np.asarray(targets), active_targets
         )
