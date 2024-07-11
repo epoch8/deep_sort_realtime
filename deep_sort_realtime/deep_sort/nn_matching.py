@@ -134,9 +134,11 @@ class NearestNeighborDistanceMetric(object):
         self.budget = budget
         self.samples = defaultdict(list)
 
-        self.save_every_nth_anchor_feature = 2
+        # self.save_every_nth_anchor_feature = 2
         self.feature_counts = defaultdict(int)
         self.anchor_track_ids = set()
+        self.add_anchor_feature_threshold = 0.01
+        self.min_num_anchor_features = 10
 
     def set_anchor_track_ids(self, anchor_track_ids):
         self.anchor_track_ids = anchor_track_ids
@@ -155,8 +157,12 @@ class NearestNeighborDistanceMetric(object):
 
         """
         for feature, target in zip(features, targets):
-            if target not in self.anchor_track_ids or self.feature_counts[target] % self.save_every_nth_anchor_feature == 0:
+            if target not in self.anchor_track_ids or self.should_add_anchor_feature(target, feature):
                 self.samples[target].append(feature)
+            # else:
+            #     print(target, len(self.samples[target]))
+            #     if len(self.samples[target]) > 0:
+            #         print(self._metric(self.samples[target], feature[None]))
             self.feature_counts[target] += 1
             if self.budget is not None:
                 self.samples[target] = self.samples[target][-self.budget:]
@@ -185,6 +191,11 @@ class NearestNeighborDistanceMetric(object):
             cost_matrix[i, :] = self._metric(self.samples[target], features)
         return cost_matrix
 
+    def should_add_anchor_feature(self, target, feature):
+        if len(self.samples[target]) < self.min_num_anchor_features:
+            return True
+        return self._metric(self.samples[target], feature[None]) > self.add_anchor_feature_threshold
+
     def to_json(self, round_big_arrays_to=32):
         metric_samples_dict = {
             track_id: [feat.astype('float64').round(round_big_arrays_to).tolist() for feat in track_id_features]
@@ -193,6 +204,7 @@ class NearestNeighborDistanceMetric(object):
         return {
             'samples': metric_samples_dict,
             'feature_counts': dict(self.feature_counts),
+            'anchor_track_ids': list(self.anchor_track_ids),
             'init_kwargs': {
                 'matching_threshold': self.matching_threshold,
                 'budget': self.budget,
@@ -212,4 +224,5 @@ class NearestNeighborDistanceMetric(object):
         metric_obj = NearestNeighborDistanceMetric(**data['init_kwargs'])
         metric_obj.samples = samples
         metric_obj.feature_counts = feature_counts
+        metric_obj.anchor_track_ids = set(data['anchor_track_ids'])
         return metric_obj
