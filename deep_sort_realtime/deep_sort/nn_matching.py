@@ -132,7 +132,7 @@ class NearestNeighborDistanceMetric(object):
             raise ValueError("Invalid metric; must be either 'euclidean' or 'cosine'")
         self.matching_threshold = matching_threshold
         self.budget = budget
-        self.samples = defaultdict(list)
+        self.samples = {}
 
         # self.save_every_nth_anchor_feature = 2
         self.feature_counts = defaultdict(int)
@@ -158,15 +158,17 @@ class NearestNeighborDistanceMetric(object):
         """
         for feature, target in zip(features, targets):
             if target not in self.anchor_track_ids or self.should_add_anchor_feature(target, feature):
-                self.samples[target].append(feature)
-            # else:
-            #     print(target, len(self.samples[target]))
-            #     if len(self.samples[target]) > 0:
-            #         print(self._metric(self.samples[target], feature[None]))
+                self.add_feature(target, feature)
             self.feature_counts[target] += 1
             if self.budget is not None:
                 self.samples[target] = self.samples[target][-self.budget:]
-        self.samples = defaultdict(list, {k: self.samples[k] for k in active_targets})
+        self.samples = {k: self.samples[k] for k in active_targets}
+
+    def add_feature(self, target, feature):
+        if target not in self.samples:
+            self.samples[target] = feature[None]
+        else:
+            self.samples[target] = np.concatenate([self.samples[target], feature[None]], axis=0)
 
     def distance(self, features, targets):
         """Compute distance between features and targets.
@@ -216,7 +218,7 @@ class NearestNeighborDistanceMetric(object):
     def from_json(data):
         samples_data = data['samples']
         samples_dict = {
-            track_id: [np.array(feat) for feat in track_id_features]
+            track_id: np.array(track_id_features)
             for track_id, track_id_features in samples_data.items()
         }
         samples = defaultdict(list, samples_dict)
