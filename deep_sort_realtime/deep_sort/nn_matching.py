@@ -136,9 +136,11 @@ class NearestNeighborDistanceMetric(object):
         self.budget = budget
         self.samples = defaultdict(list)
 
-        self.save_every_nth_anchor_feature = 2
+        # self.save_every_nth_anchor_feature = 2
         self.feature_counts = defaultdict(int)
         self.anchor_track_ids = set()
+        self.add_anchor_feature_threshold = 0.01
+        self.min_num_anchor_features = 10
 
     def set_anchor_track_ids(self, anchor_track_ids):
         self.anchor_track_ids = anchor_track_ids
@@ -157,7 +159,7 @@ class NearestNeighborDistanceMetric(object):
 
         """
         for feature, target in zip(features, targets):
-            if target not in self.anchor_track_ids or self.feature_counts[target] % self.save_every_nth_anchor_feature == 0:
+            if target not in self.anchor_track_ids or self.should_add_anchor_feature(target, feature):
                 self.samples[target].append(feature)
             self.feature_counts[target] += 1
             if self.budget is not None:
@@ -186,3 +188,8 @@ class NearestNeighborDistanceMetric(object):
         for i, target in enumerate(targets):
             cost_matrix[i, :] = self._metric(self.samples[target], features)
         return cost_matrix
+
+    def should_add_anchor_feature(self, target, feature):
+        if len(self.samples[target]) < self.min_num_anchor_features:
+            return True
+        return self._metric(self.samples[target], feature[None]) > self.add_anchor_feature_threshold
