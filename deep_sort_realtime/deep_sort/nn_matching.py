@@ -134,8 +134,12 @@ class NearestNeighborDistanceMetric(object):
         self.budget = budget
         self.samples = defaultdict(list)
 
-        self.save_every_nth_feature = 1
+        self.save_every_nth_anchor_feature = 2
         self.feature_counts = defaultdict(int)
+        self.anchor_track_ids = set()
+
+    def set_anchor_track_ids(self, anchor_track_ids):
+        self.anchor_track_ids = anchor_track_ids
 
     def partial_fit(self, features, targets, active_targets):
         """Update the distance metric with new data.
@@ -151,7 +155,7 @@ class NearestNeighborDistanceMetric(object):
 
         """
         for feature, target in zip(features, targets):
-            if self.feature_counts[target] % self.save_every_nth_feature == 0:
+            if target not in self.anchor_track_ids or self.feature_counts[target] % self.save_every_nth_anchor_feature == 0:
                 self.samples[target].append(feature)
             self.feature_counts[target] += 1
             if self.budget is not None:

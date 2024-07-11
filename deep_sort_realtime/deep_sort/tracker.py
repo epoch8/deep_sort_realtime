@@ -147,6 +147,7 @@ class Tracker:
             # if self.restore_removed_anchor_tracks is False - no anchor track ids will be saved ->
             # -> no anchor tracks will be restored
             self.anchor_track_ids.update(track.track_id for track in self.tracks)
+            self.metric.set_anchor_track_ids(self.anchor_track_ids)
 
         # Update distance metric.
         features, targets = [], []
