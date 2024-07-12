@@ -193,7 +193,7 @@ class NearestNeighborDistanceMetric(object):
         return cost_matrix
 
     def should_add_anchor_feature(self, target, feature):
-        if len(self.samples[target]) < self.min_num_anchor_features:
+        if len(self.samples.get(target, [])) < self.min_num_anchor_features:
             return True
         return self._metric(self.samples[target], feature[None]) > self.add_anchor_feature_threshold
 
