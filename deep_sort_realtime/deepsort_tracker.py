@@ -25,7 +25,7 @@ class DeepSort(object):
         override_track_class=None,
         today=None,
         restore_removed_anchor_tracks=False,
-        add_anchor_feature_threshold=0.01,
+        add_anchor_feature_threshold=0.05,
         min_num_anchor_features=10
     ):
         """
