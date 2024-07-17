@@ -26,7 +26,8 @@ class DeepSort(object):
         today=None,
         restore_removed_anchor_tracks=False,
         add_anchor_feature_threshold=0.05,
-        min_num_anchor_features=10
+        min_num_anchor_features=10,
+        round_big_arrays_to=32
     ):
         """
 
@@ -55,7 +56,12 @@ class DeepSort(object):
         """
         self.nms_max_overlap = nms_max_overlap
         metric = nn_matching.NearestNeighborDistanceMetric(
-            "cosine", max_cosine_distance, nn_budget, add_anchor_feature_threshold, min_num_anchor_features
+            "cosine",
+            max_cosine_distance,
+            nn_budget,
+            add_anchor_feature_threshold,
+            min_num_anchor_features,
+            round_big_arrays_to
         )
         self.tracker = Tracker(
             metric,

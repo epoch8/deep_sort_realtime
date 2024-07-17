@@ -53,7 +53,8 @@ class Tracker:
         override_track_class=None,
         today=None,
         gating_only_position=False,
-        restore_removed_anchor_tracks=False
+        restore_removed_anchor_tracks=False,
+        round_big_arrays_to=32
     ):
         self.today = today
         self.metric = metric
@@ -73,6 +74,7 @@ class Tracker:
             self.track_class = override_track_class
         else:
             self.track_class = Track
+        self.round_big_arrays_to = round_big_arrays_to
 
     def predict(self):
         """Propagate track state distributions one time step forward.
@@ -232,7 +234,7 @@ class Tracker:
                 self.n_init,
                 self.max_age,
                 # mean, covariance, self._next_id, self.n_init, self.max_age,
-                feature=detection.feature,
+                feature=detection.feature.astype('float64').round(self.round_big_arrays_to),
                 original_ltwh=detection.get_ltwh(),
                 det_class=detection.class_name,
                 det_conf=detection.confidence,
