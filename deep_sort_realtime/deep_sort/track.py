@@ -84,6 +84,7 @@ class Track:
         original_ltwh=None,
         det_class=None,
         det_conf=None,
+        bbox_id=None,
         instance_mask=None,
         others=None,
     ):
@@ -107,6 +108,7 @@ class Track:
         self.original_ltwh = original_ltwh
         self.det_class = det_class
         self.det_conf = det_conf
+        self.bbox_id = bbox_id
         self.instance_mask = instance_mask
         self.others = others
 
@@ -263,6 +265,7 @@ class Track:
         self.det_conf = detection.confidence
         if detection.class_name is not None:
             self.det_class = detection.class_name
+        self.bbox_id = detection.bbox_id
         self.instance_mask = detection.instance_mask
         self.others = detection.others
 

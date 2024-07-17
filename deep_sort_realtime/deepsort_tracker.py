@@ -145,11 +145,12 @@ class DeepSort(object):
                     raw_det[0],
                     raw_det[1],
                     embed,
-                    class_name=raw_det[2] if len(raw_det) == 3 else None,
+                    class_name=raw_det[2] if len(raw_det) >= 3 else None,
+                    bbox_id=raw_det[3] if len(raw_det) == 4 else None,
                     instance_mask=instance_masks[i] if isinstance(instance_masks, Iterable) else instance_masks,
                     others=others[i] if isinstance(others, Iterable) else others,
                 )
-            )  # raw_det = [bbox, conf_score, class]
+            )  # raw_det = [bbox, conf_score, class, bbox_id]
         return detection_list
 
     @staticmethod
