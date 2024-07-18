@@ -1,7 +1,6 @@
 import logging
 from collections.abc import Iterable
 
-import cv2
 import numpy as np
 
 from deep_sort_realtime.deep_sort import nn_matching
