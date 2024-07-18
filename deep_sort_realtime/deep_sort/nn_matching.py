@@ -129,7 +129,6 @@ class NearestNeighborDistanceMetric(object):
         budget=None,
         add_anchor_feature_threshold=0.05,
         min_num_anchor_features=10,
-        round_big_arrays_to=32
     ):
         self.metric = metric
         if self.metric == "euclidean":
@@ -145,7 +144,6 @@ class NearestNeighborDistanceMetric(object):
         self.anchor_track_ids = set()
         self.add_anchor_feature_threshold = add_anchor_feature_threshold
         self.min_num_anchor_features = min_num_anchor_features
-        self.round_big_arrays_to = round_big_arrays_to
 
     def set_anchor_track_ids(self, anchor_track_ids):
         self.anchor_track_ids = anchor_track_ids
@@ -171,7 +169,6 @@ class NearestNeighborDistanceMetric(object):
         self.samples = {k: self.samples[k] for k in active_targets}
 
     def add_feature(self, target, feature):
-        feature = feature.astype('float64').round(self.round_big_arrays_to)
         if target not in self.samples:
             self.samples[target] = feature[None]
         else:

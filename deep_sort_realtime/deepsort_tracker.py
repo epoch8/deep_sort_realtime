@@ -26,7 +26,6 @@ class DeepSort(object):
         restore_removed_anchor_tracks=False,
         add_anchor_feature_threshold=0.05,
         min_num_anchor_features=10,
-        round_big_arrays_to=32
     ):
         """
 
@@ -59,8 +58,7 @@ class DeepSort(object):
             max_cosine_distance,
             nn_budget,
             add_anchor_feature_threshold,
-            min_num_anchor_features,
-            round_big_arrays_to
+            min_num_anchor_features
         )
         self.tracker = Tracker(
             metric,
