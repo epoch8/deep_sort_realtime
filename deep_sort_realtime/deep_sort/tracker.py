@@ -1,11 +1,14 @@
 # vim: expandtab:ts=4:sw=4
 from __future__ import absolute_import
+
+from copy import deepcopy
 from datetime import datetime
 import numpy as np
 from . import kalman_filter
 from . import linear_assignment
 from . import iou_matching
 from .track import Track
+from .nn_matching import NearestNeighborDistanceMetric
 
 
 class Tracker:
@@ -50,7 +53,7 @@ class Tracker:
         override_track_class=None,
         today=None,
         gating_only_position=False,
-        restore_removed_anchor_tracks=False
+        restore_removed_anchor_tracks=False,
     ):
         self.today = today
         self.metric = metric
@@ -58,12 +61,12 @@ class Tracker:
         self.max_age = max_age
         self.n_init = n_init
         self.gating_only_position = gating_only_position
+        self.restore_removed_anchor_tracks = restore_removed_anchor_tracks
 
         self.kf = kalman_filter.KalmanFilter()
         self.tracks = []
         self.anchor_track_ids = set()
         self.removed_anchor_tracks = []
-        self.restore_removed_anchor_tracks = restore_removed_anchor_tracks
         self.del_tracks_ids = []
         self._next_id = 1
         if override_track_class:
@@ -97,16 +100,24 @@ class Tracker:
                 self.today = today
                 self._next_id = 1
 
+        # when we update existing tracks - we don't need classes
+        detections_maybe_without_classes = deepcopy(detections)
+        for det in detections_maybe_without_classes:
+            if not anchor:
+                det.class_name = None
+
         # Run matching cascade.
-        matches, unmatched_tracks, unmatched_detections = self._match(detections)
+        matches, unmatched_tracks, unmatched_detections = self._match(detections_maybe_without_classes)
 
         # Update track set.
         for track_idx, detection_idx in matches:
             if track_idx < len(self.tracks):  # match is in current track
-                self.tracks[track_idx].update(self.kf, detections[detection_idx])
+                self.tracks[track_idx].update(self.kf, detections_maybe_without_classes[detection_idx])
             else:  # match is in removed anchor track
                 removed_track_idx = track_idx - len(self.tracks)
-                self.removed_anchor_tracks[removed_track_idx].update(self.kf, detections[detection_idx])
+                self.removed_anchor_tracks[removed_track_idx].update(
+                    self.kf, detections_maybe_without_classes[detection_idx]
+                )
                 self.removed_anchor_tracks[removed_track_idx].mark_confirmed()
                 # print(f'Restore removed anchor {self.removed_anchor_tracks[removed_track_idx].track_id}')
         for track_idx in unmatched_tracks:
@@ -115,6 +126,7 @@ class Tracker:
             else:  # if removed track is unmatched - we don't need to remove it again
                 pass
         for detection_idx in unmatched_detections:
+            # for new tracks - give them classes from search space predictions
             self._initiate_track(detections[detection_idx])
         new_tracks = []
         self.del_tracks_ids = []
@@ -135,16 +147,17 @@ class Tracker:
             # if self.restore_removed_anchor_tracks is False - no anchor track ids will be saved ->
             # -> no anchor tracks will be restored
             self.anchor_track_ids.update(track.track_id for track in self.tracks)
+            self.metric.set_anchor_track_ids(self.anchor_track_ids)
 
         # Update distance metric.
-        active_targets = [t.track_id for t in self.tracks if t.is_confirmed()]
         features, targets = [], []
         for track in self.tracks:
             if not track.is_confirmed():
                 continue
-            features += track.features
-            targets += [track.track_id for _ in track.features]
+            features.append(track.features[-1])
+            targets.append(track.track_id)
             track.features = [track.features[-1]]
+        active_targets = [t.track_id for t in self.tracks + self.removed_anchor_tracks]
         self.metric.partial_fit(
             np.asarray(features), np.asarray(targets), active_targets
         )
@@ -232,3 +245,42 @@ class Tracker:
     def delete_all_tracks(self):
         self.tracks = []
         self._next_id = 1
+
+    def to_json(self, round_big_arrays_to=32):
+        tracks_list = [
+            track.to_json(round_big_arrays_to=round_big_arrays_to)
+            for track in self.tracks
+        ]
+        removed_anchor_tracks_list = [
+            track.to_json(round_big_arrays_to=round_big_arrays_to)
+            for track in self.removed_anchor_tracks
+        ]
+        anchor_track_ids_list = list(self.anchor_track_ids)
+        metric_dict = self.metric.to_json(round_big_arrays_to=round_big_arrays_to)
+        return {
+            'tracks': tracks_list,
+            'removed_anchor_tracks': removed_anchor_tracks_list,
+            'anchor_track_ids': anchor_track_ids_list,
+            '_next_id': self._next_id,
+            'metric': metric_dict,
+            'init_kwargs': {
+                'max_iou_distance': self.max_iou_distance,
+                'max_age': self.max_age,
+                'n_init': self.n_init,
+                'gating_only_position': self.gating_only_position,
+                'restore_removed_anchor_tracks': self.restore_removed_anchor_tracks
+            }
+        }
+
+    @staticmethod
+    def from_json(data):
+        metric = NearestNeighborDistanceMetric.from_json(data['metric'])
+        tracks = [Track.from_json(track_data) for track_data in data['tracks']]
+        rem_anch_tracks = [Track.from_json(track_data) for track_data in data['removed_anchor_tracks']]
+        tracker = Tracker(metric, **data['init_kwargs'])
+
+        tracker.tracks = tracks
+        tracker.removed_anchor_tracks = rem_anch_tracks
+        tracker.anchor_track_ids = set(data['anchor_track_ids'])
+        tracker._next_id = data['_next_id']
+        return tracker

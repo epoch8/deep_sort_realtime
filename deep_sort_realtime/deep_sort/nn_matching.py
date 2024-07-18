@@ -122,17 +122,31 @@ class NearestNeighborDistanceMetric(object):
 
     """
 
-    def __init__(self, metric, matching_threshold, budget=None):
-
-        if metric == "euclidean":
+    def __init__(
+        self,
+        metric,
+        matching_threshold,
+        budget=None,
+        add_anchor_feature_threshold=0.05,
+        min_num_anchor_features=10,
+    ):
+        self.metric = metric
+        if self.metric == "euclidean":
             self._metric = _nn_euclidean_distance
-        elif metric == "cosine":
+        elif self.metric == "cosine":
             self._metric = _nn_cosine_distance
         else:
             raise ValueError("Invalid metric; must be either 'euclidean' or 'cosine'")
         self.matching_threshold = matching_threshold
         self.budget = budget
-        self.samples = defaultdict(dict)
+        self.samples = {}
+
+        self.anchor_track_ids = set()
+        self.add_anchor_feature_threshold = add_anchor_feature_threshold
+        self.min_num_anchor_features = min_num_anchor_features
+
+    def set_anchor_track_ids(self, anchor_track_ids):
+        self.anchor_track_ids = anchor_track_ids
 
     def partial_fit(self, features, targets, active_targets):
         """Update the distance metric with new data.
@@ -148,12 +162,17 @@ class NearestNeighborDistanceMetric(object):
 
         """
         for feature, target in zip(features, targets):
-            self.samples[target][hash(str(feature))] = feature
+            if target not in self.anchor_track_ids or self.should_add_anchor_feature(target, feature):
+                self.add_feature(target, feature)
             if self.budget is not None:
-                keys_left = list(self.samples[target])[-self.budget:]
-                self.samples[target] = {key: self.samples[target][key] for key in keys_left}
-        # don't remove samples for removed tracks
-        # self.samples = defaultdict(dict, {k: self.samples[k] for k in active_targets})
+                self.samples[target] = self.samples[target][-self.budget:]
+        self.samples = {k: self.samples[k] for k in active_targets}
+
+    def add_feature(self, target, feature):
+        if target not in self.samples:
+            self.samples[target] = feature[None]
+        else:
+            self.samples[target] = np.concatenate([self.samples[target], feature[None]], axis=0)
 
     def distance(self, features, targets):
         """Compute distance between features and targets.
@@ -175,5 +194,40 @@ class NearestNeighborDistanceMetric(object):
         """
         cost_matrix = np.zeros((len(targets), len(features)))
         for i, target in enumerate(targets):
-            cost_matrix[i, :] = self._metric(list(self.samples[target].values()), features)
+            cost_matrix[i, :] = self._metric(self.samples[target], features)
         return cost_matrix
+
+    def should_add_anchor_feature(self, target, feature):
+        if len(self.samples.get(target, [])) < self.min_num_anchor_features:
+            return True
+        return self._metric(self.samples[target], feature[None])[0] > self.add_anchor_feature_threshold
+
+    def to_json(self, round_big_arrays_to=32):
+        metric_samples_dict = {
+            track_id: [feat.astype('float64').round(round_big_arrays_to).tolist() for feat in track_id_features]
+            for track_id, track_id_features in self.samples.items()
+        }
+        return {
+            'samples': metric_samples_dict,
+            'anchor_track_ids': list(self.anchor_track_ids),
+            'init_kwargs': {
+                'matching_threshold': self.matching_threshold,
+                'budget': self.budget,
+                'metric': self.metric,
+                'min_num_anchor_features': self.min_num_anchor_features,
+                'add_anchor_feature_threshold': self.add_anchor_feature_threshold
+            }
+        }
+
+    @staticmethod
+    def from_json(data):
+        samples_data = data['samples']
+        samples_dict = {
+            track_id: np.array(track_id_features)
+            for track_id, track_id_features in samples_data.items()
+        }
+        samples = defaultdict(list, samples_dict)
+        metric_obj = NearestNeighborDistanceMetric(**data['init_kwargs'])
+        metric_obj.samples = samples
+        metric_obj.anchor_track_ids = set(data['anchor_track_ids'])
+        return metric_obj
