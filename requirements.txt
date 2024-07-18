@@ -4,6 +4,5 @@ dataclasses
 opencv-python
 Pillow
 torch
-torchvision
 typing-extensions
 boto3
