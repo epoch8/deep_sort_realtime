@@ -236,6 +236,7 @@ class Tracker:
                 original_ltwh=detection.get_ltwh(),
                 det_class=detection.class_name,
                 det_conf=detection.confidence,
+                bbox_id=detection.bbox_id,
                 instance_mask=detection.instance_mask,
                 others=detection.others,
             )
