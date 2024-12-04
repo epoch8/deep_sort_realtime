@@ -107,7 +107,7 @@ class Track:
 
         self.original_ltwh = original_ltwh
         self.det_class = det_class
-        self.det_conf = det_conf
+        self.det_conf = 0.0  # when we create new track, it has score of 0
         self.bbox_id = bbox_id
         self.instance_mask = instance_mask
         self.others = others
@@ -116,8 +116,11 @@ class Track:
         self.ltrb_history = []
         if self.last_seen_ltrb is not None:
             self.ltrb_history.append(self.last_seen_ltrb)
+        self.det_class_history = [self.det_class]
+        self.bbox_id_history = [self.bbox_id]
         self.status = 'new'
         self.switch = None
+
 
     def to_tlwh(self, orig=False, orig_strict=False):
         """Get current position in bounding box format `(top left x, top left y,
@@ -238,13 +241,13 @@ class Track:
         self.age += 1
         self.time_since_update += 1
         self.original_ltwh = None
-        self.det_conf = None
+        self.det_conf = 0.0
         self.instance_mask = None
         self.others = None
 
         self.status = 'missed'
 
-    def update(self, kf, detection):
+    def update(self, kf, detection, score):
         """Perform Kalman filter measurement update step and update the feature
         cache.
 
@@ -256,18 +259,26 @@ class Track:
             The associated detection.
 
         """
+        # because of pickling, we don't have these attributes yet
+        if not hasattr(self, 'det_class_history'):
+            self.det_class_history = []
+        if not hasattr(self, 'bbox_id_history'):
+            self.bbox_id_history = []
+
         self.original_ltwh = detection.get_ltwh()
         self.mean, self.covariance = kf.update(
             self.mean, self.covariance, detection.to_xyah()
         )
         self.features.append(detection.feature)
         self.latest_feature = detection.feature
-        self.det_conf = detection.confidence
         if detection.class_name is not None:
             self.det_class = detection.class_name
         self.bbox_id = detection.bbox_id
         self.instance_mask = detection.instance_mask
         self.others = detection.others
+
+        self.det_class_history.append(detection.class_name)
+        self.bbox_id_history.append(detection.bbox_id)
 
         self.hits += 1
 
@@ -278,6 +289,8 @@ class Track:
         self.last_seen_ltrb = self.to_ltrb(orig=True, orig_strict=True)
         self.ltrb_history.append(self.last_seen_ltrb)
         self.status = 'ok'
+
+        self.det_conf = score
 
     def mark_missed(self):
         """Mark this track as missed (no association at the current time step)."""

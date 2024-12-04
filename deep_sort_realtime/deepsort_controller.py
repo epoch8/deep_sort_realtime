@@ -24,7 +24,7 @@ class DeepSortController:
         tracks = tracker.update_tracks(detections, embeddings, anchor=create_new)
         if save_state_path is not None:
             self._save_tracker_data(save_state_path, tracker)
-        return self._format_output(tracks)
+        return self._format_output(tracks, tracker.tracker.anchor_track_ids)
 
     def _create_tracker(self, state_path, create_new=False):
         if create_new:
@@ -44,14 +44,15 @@ class DeepSortController:
             embeddings.append(crop['embedding'])
         return detections, embeddings
 
-    def _format_output(self, tracks):
+    def _format_output(self, tracks, anchor_track_ids):
         return {
             'crops': [
                 {
                     'bbox_id': track.bbox_id,
                     'product_id': track.det_class,
                     'new': track.status == 'new',
-                    # 'track': track  # TODO: REMOVE IT
+                    'score': track.det_conf,
+                    'is_anchor': track.track_id in anchor_track_ids
                 }
                 for track in tracks
             ],

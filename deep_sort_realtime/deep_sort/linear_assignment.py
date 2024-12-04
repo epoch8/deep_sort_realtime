@@ -78,7 +78,7 @@ def min_cost_matching(
             unmatched_tracks.append(track_idx)
             unmatched_detections.append(detection_idx)
         else:
-            matches.append((track_idx, detection_idx))
+            matches.append((track_idx, detection_idx, cost_matrix[row, col]))
     return matches, unmatched_tracks, unmatched_detections
 
 
@@ -153,7 +153,7 @@ def matching_cascade(
             unmatched_detections,
         )
         matches += matches_l
-    unmatched_tracks = list(set(track_indices) - set(k for k, _ in matches))
+    unmatched_tracks = list(set(track_indices) - set(k for k, _, _ in matches))
     return matches, unmatched_tracks, unmatched_detections
 
 

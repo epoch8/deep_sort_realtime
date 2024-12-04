@@ -67,6 +67,7 @@ class Tracker:
         self.tracks = []
         self.anchor_track_ids = set()
         self.removed_anchor_tracks = []
+        self.removed_tracks = []
         self.del_tracks_ids = []
         self._next_id = 1
         if override_track_class:
@@ -110,13 +111,13 @@ class Tracker:
         matches, unmatched_tracks, unmatched_detections = self._match(detections_maybe_without_classes)
 
         # Update track set.
-        for track_idx, detection_idx in matches:
+        for track_idx, detection_idx, score in matches:
             if track_idx < len(self.tracks):  # match is in current track
-                self.tracks[track_idx].update(self.kf, detections_maybe_without_classes[detection_idx])
+                self.tracks[track_idx].update(self.kf, detections_maybe_without_classes[detection_idx], score)
             else:  # match is in removed anchor track
                 removed_track_idx = track_idx - len(self.tracks)
                 self.removed_anchor_tracks[removed_track_idx].update(
-                    self.kf, detections_maybe_without_classes[detection_idx]
+                    self.kf, detections_maybe_without_classes[detection_idx], score
                 )
                 self.removed_anchor_tracks[removed_track_idx].mark_confirmed()
                 # print(f'Restore removed anchor {self.removed_anchor_tracks[removed_track_idx].track_id}')
@@ -130,6 +131,9 @@ class Tracker:
             self._initiate_track(detections[detection_idx])
         new_tracks = []
         self.del_tracks_ids = []
+        # because of pickling, we don't have this attribute yet
+        if not hasattr(self, 'removed_tracks'):
+            self.removed_tracks = []
         for t in self.tracks:
             if not t.is_deleted():
                 new_tracks.append(t)
@@ -137,6 +141,8 @@ class Tracker:
                 self.del_tracks_ids.append(t.track_id)
                 if t.track_id in self.anchor_track_ids:
                     self.removed_anchor_tracks.append(t)
+                else:
+                    self.removed_tracks.append(t)
         # add those removed anchor tracks which are confirmed to new tracks
         new_tracks.extend(filter(lambda track: track.is_confirmed(), self.removed_anchor_tracks))
         # remove confirmed tracks from removed_anchor_tracks
@@ -187,15 +193,16 @@ class Tracker:
             tracks_to_match,
             detections
         )
+        iou_match_to_iou = {(track_idx, det_idx): iou for track_idx, det_idx, iou in matches_iou}
 
         # then we leave only those track matches that are recent
         iou_emb_track_candidates = [
-            k for k, _ in matches_iou if tracks_to_match[k].time_since_update == 1
+            k for k, _, _ in matches_iou if tracks_to_match[k].time_since_update == 1
         ]
         unmatched_tracks_iou_time = [
-            k for k, _ in matches_iou if tracks_to_match[k].time_since_update != 1
+            k for k, _, _ in matches_iou if tracks_to_match[k].time_since_update != 1
         ]
-        iou_emb_detection_candidates = [k for _, k in matches_iou]
+        iou_emb_detection_candidates = [k for _, k, _ in matches_iou]
         # then we match by embeddings
         (
             matches_iou_emb,
@@ -212,10 +219,21 @@ class Tracker:
             iou_emb_detection_candidates
         )
 
+        def score_agg_function(score_iou, score_emb, eps=1e-8):
+            # score_iou_first_n = int((1 - score_iou - eps) * 100)
+            # score_emb_first_n = int((1 - score_emb - eps) * 100)
+            # return float(f"0.{score_iou_first_n:02d}{score_emb_first_n:02d}")
+            return (1 - score_iou) * (1 - score_emb)
+
+        matches_iou_emb_with_agg_score = [
+            (track_idx, det_idx, score_agg_function(iou_match_to_iou.get((track_idx, det_idx), 0.), emb_score))
+            for track_idx, det_idx, emb_score in matches_iou_emb
+        ]
+
         # we need to wrap in lists because they might be empty
         unmatched_tracks = list(set(list(unmatched_tracks_iou) + list(unmatched_tracks_iou_time) + list(unmatched_tracks_emb)))
         unmatched_detections = list(set(list(unmatched_detections_iou) + list(unmatched_detections_emb)))
-        return matches_iou_emb, unmatched_tracks, unmatched_detections
+        return matches_iou_emb_with_agg_score, unmatched_tracks, unmatched_detections
 
     def _initiate_track(self, detection):
         mean, covariance = self.kf.initiate(detection.to_xyah())
